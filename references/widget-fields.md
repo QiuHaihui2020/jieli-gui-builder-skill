@@ -79,7 +79,7 @@
 
 `text_use_i18n: true` 时 `text` 只是设计期占位，实际文字来自多语言表，改 `text` 无效。
 
-文字样式的字段在 `style` 里：`font`（字号）、`font_family`（字体名）、`text_color`、`text_align`、`letter_space`、`line_space`，以及 `font_library_id`——它是样式面板里的「字库」，给点阵字体额外预置一批汉字，代价和适用场景见 SKILL.md 的「字库（font_library_id）」。
+文字样式的字段在 `style` 里：`font`（字号）、`font_family`（字体名）、`text_color`、`text_align`、`letter_space`、`line_space`，以及 `font_library_id`——它是样式面板里的「字库」，给点阵字体额外预置一批汉字，代价和适用场景见 `fonts.md` 的「字库（font_library_id）」。
 
 ## Button 按钮
 
