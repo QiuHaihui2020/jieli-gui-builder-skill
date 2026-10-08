@@ -21,7 +21,7 @@ description: 杰理 JLGuiBuilder（LVGL v8 方案）的界面布局编辑——�
 
 ## ⚠ 动手前的强制阅读
 
-**本文「铁律」那 16 条是一句话摘要，不足以照着动手**——被压缩掉的正是"怎么做对"的部分。
+**本文「铁律」那 17 条是一句话摘要，不足以照着动手**——被压缩掉的正是"怎么做对"的部分。
 下表命中哪一行，就先把对应那一节读完再改。
 
 | 你要做的事 / 你看到的现象 | 动手前必须读 |
@@ -33,6 +33,7 @@ description: 杰理 JLGuiBuilder（LVGL v8 方案）的界面布局编辑——�
 | 写代码驱动控件、接数据、做自绘 | `references/code-integration.md` |
 | 不确定界面上那个东西归 json 还是归代码 | **先拿控件名去 `custom/` grep**，再看本文「控件归属：工具建，代码喂」 |
 | 新增控件 / 调整层级 | `references/editing-json.md`「新增控件和调整层级」 |
+| 新增页面 / 新页面在工具里不显示 | `references/editing-json.md`「新增页面：四处登记」；代码切页面看 `references/code-integration.md`「代码里切换页面」 |
 | 改了没反应 / 改动莫名消失 / 位置纹丝不动 | 铁律 1、2、4 + 本文「第六步：改完之后」的时间戳自查 |
 | **问 JLGuiBuilder 工具本身怎么用，而本文没写** | **先 grep `JLGuiBuilder_doc/`**（官方文档离线全量副本，检索方法见文末「官方文档」一节），不要直接说不知道 |
 
@@ -105,6 +106,8 @@ AI 做 ──┬─ ① 改 json         ui_prj/<工程>/jlui/design/default/ui/
 
 **16. 脚本批量改代码时，替换锚点必须唯一。** 先 `assert count == 1` 再替换，改完验证落点在哪个函数。插错函数的症状是"编译通过、语法没问题、运行时完全不执行、日志里连报错都没有"。
 
+**17. 新增页面要四处登记，页面清单在 `jlui/project.jlui` 的 `screenList`。** 只放一个 `ui/<页>.json` 工具根本不加载（目录里残留的 `home.json` 就是这样被无视的）；还要在 `ui.json` 的 `screen[]` + `group` 和 `scene.json` 里各登记一条。页面同样遵守铁律 3：需要"一张空白/透明页"时在工程里建，**不要在代码里 `lv_obj_create(NULL)` + `lv_scr_load()` 临时造**——那会绕过页面管理器和页面栈，别的模块一切页就把它冲掉。复制已有页面节点时，必清继承来的 `event`（例如手势跳转）。做法见 `references/editing-json.md`「新增页面：四处登记」。
+
 ## 为什么要小心
 
 这套工具有几个反直觉的地方，不了解就会改了没效果，或者改出错位：
@@ -146,17 +149,21 @@ diff -r ui_prj/<工程>/custom/ sdk/apps/<应用>/lvgl_v8_ui_app/<风格>/custom
 杰理 UI 工程的根目录形如 `ui_prj/<工程名>/`（例如 `ui_prj/wifi_soundbox_800x480/`），这也是 GUI Builder 打开工程时选的目录。界面数据在：
 
 ```
-ui_prj/<工程名>/jlui/design/default/
-├── ui/<页面名>.json     ← 只改这里。每个页面一个文件，控件的权威数据
-├── ui.json              ← 不要改。编译时工具自己重写的快照
-└── scene.json           ← 不要改。只是画布缩放和页面缩略图的摆放位置
+ui_prj/<工程名>/jlui/
+├── project.jlui             ← 工程文件（工具"打开"的就是它），screenList 是页面清单
+└── design/default/
+    ├── ui/<页面名>.json     ← 只改这里。每个页面一个文件，控件的权威数据
+    ├── ui.json              ← 不要改。编译时工具自己重写的快照
+    └── scene.json           ← 不要改。只是画布缩放和页面缩略图的摆放位置
 ```
+
+> 上面的"不要改"针对**改已有页面**。**新增页面**时 `project.jlui`、`ui.json`、`scene.json` 都要登记一条，见 `references/editing-json.md`「新增页面：四处登记」。
 
 判断依据：`ui.json` 的修改时间和生成的 `setup_scr_*.c` 完全相同（同一秒），说明它是工具编译时的**输出**而非输入；而 `ui/<页面名>.json` 的时间跟着你在设计器里的操作走。工具读 `ui/<页面名>.json`，产出 `ui.json` 和 C 代码。
 
 `ui.json` 里 `screen[].widgets[]` 确实也有 `pos`/`size`，看着像坐标源，但那是上次编译的快照。改它没有任何作用，下次编译会被覆盖。
 
-不确定页面名时，列一下 `ui/` 目录即可；页面名和生成的 `setup_scr_<页面名>.c` 一一对应。
+不确定页面名时，以 `jlui/project.jlui` 的 `screenList` 为准；页面名和生成的 `setup_scr_<页面名>.c` 一一对应。**别只看 `ui/` 目录**——里面可能残留不在 `screenList` 里的旧文件（实例：`ui/home.json` 在目录里，工具却从不加载它）。
 
 ## 先分清：哪些布局归 json 管
 
@@ -345,7 +352,7 @@ json 只决定控件长什么样、在哪。运行时把数据填进去、响应
 
 | 文件 | 什么时候读 |
 |---|---|
-| `references/editing-json.md` | 第二步：读懂结构 / 第三步：改坐标和尺寸 / 第四步：改文字和样式 / 第五步：怎么动手改 / 新增控件和调整层级 |
+| `references/editing-json.md` | 第二步：读懂结构 / 第三步：改坐标和尺寸 / 第四步：改文字和样式 / 第五步：怎么动手改 / 新增控件和调整层级 / 新增页面：四处登记 |
 | `references/widget-fields.md` | **改控件属性**。10 类控件的特有字段、取值、各自的官方文档链接 |
 | `references/fonts.md` | 动态中文文本：必须用矢量字体 / 把字体打进 Flash / 字体和字号 / 「字库」（`font_library_id`） |
 | `references/assets.md` | 还原设计稿：底图 + 控件叠加（步骤 / 图标贴图 / `use_fs` / Img 控件尺寸） |

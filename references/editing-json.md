@@ -203,3 +203,57 @@ json.dumps(j, ensure_ascii=False, indent=2)     # 末尾不要再加换行符
 
 `children` 数组顺序就是绘制顺序，**append 到末尾 = 画在最上层**。
 
+
+## 新增页面：四处登记
+
+> 实战来源：给 USB 副屏加一张全透明空白页（`usb_screen`）。只放 `ui/usb_screen.json` → 工具里看不到；再补 `ui.json` → 还是看不到；补上 `project.jlui` 的 `screenList` 才出现。
+
+**最省事的路线仍然是让用户在工具里点「新建页面」**（标准页面），工具会自己把下面四处写全；用户明确要 AI 来建时，才按本节手工登记。
+
+### 页面清单在哪
+
+工具"打开工程"打开的是 `jlui/project.jlui`，页面清单是它的 `screenList`：
+
+```json
+"screenList": [
+  {"name": "music_player", "type": "Standard"},
+  {"name": "sys_menu",     "type": "Standard"},
+  {"name": "eq_modify",    "type": "Standard"}
+]
+```
+
+工具**按这个清单**去加载 `design/default/ui/<name>.json`，不扫描 `ui/` 目录——所以目录里残留的 `home.json` 永远不显示。`type` 取 `Standard`（标准页面，替换当前活动页）或顶层页面（建在 `lv_layer_top()` 上、叠在活动页之上，适合状态栏/弹窗；值以工具新建时写出的为准）。
+
+### 四处各写什么
+
+| # | 文件 | 加什么 | 怎么来 |
+|---|---|---|---|
+| 1 | `jlui/project.jlui` → `screenList` | `{"name": "<页>", "type": "Standard"}` 追加到末尾 | 手写这一条即可 |
+| 2 | `design/default/ui/<页>.json` | 完整页面节点（编辑格式：`type: "Screen"`、`children`、`style` 全字段、`activeStyle` 等） | **深拷贝同工程任一页面的顶层节点**，改 `id`/`name`，`children` 置 `[]` |
+| 3 | `design/default/ui.json` → `screen[]`；`group[default_group].data` | `screen[]` 追加一条（编译格式：`type: "scr"`、`screen_type: "Standard"`、`widgets: []`、`style` 只记与默认不同的属性）；`group` 追加 `{"id": <页id>, "data": [], "name": <页>}` | 深拷贝同文件里一个页面条目，改 `id`/`name`，`widgets`/`bindMsg`/`bindStyle` 清空 |
+| 4 | `design/default/scene.json` → `nodes` | `{"id": <页id>, "position": {"x": 80, "y": <往下排>}}` | 设计器画布摆放位置 |
+
+四处的 `id`（`#` + 16 位字母数字，全工程唯一）和 `name` 必须一致。追加到列表**末尾**，已有页面的 `GUI_SCREEN_*` 编号不受影响。
+
+### 复制页面节点时必须清掉的继承物
+
+- **`event`**：页面级事件会被一起复制过来。实例：从 `sys_menu` 复制出的新页带着"右滑 → 跳回 music_player"的手势，副屏显示时在触摸屏一划就被切走。新页面一律 `event: []`。
+- `bindMsg` → `{}`，`bindControlMsgs` → `[]`，`setup_scr_inc` / `setup_scr_code` → `""`。
+- **`activeStyle` 要和 `style[0]`（`LV_PART_MAIN`/`LV_STATE_DEFAULT`）保持一致**：它是编辑器当前选中样式的缓存，两者不一致时工具保存可能拿旧值覆盖你改的样式。
+- `ui.json` 那一条的 `style` 是精简格式，例如透明背景只写差异：
+
+  ```json
+  "style": [{"part": "LV_PART_MAIN", "state": "LV_STATE_DEFAULT", "disable": false,
+             "bg_color": "#000000", "bg_opa": 0, "name": "gui_scr_main_default_style"}]
+  ```
+
+### 安全措施
+
+- `ui_prj/` 经常整个在 `.gitignore` 里，**改之前先把 `project.jlui`、`ui.json`、`scene.json`、`ui/` 整体备份**到工程外。
+- 改完 `diff` 备份与现文件，确认**只有新增行、没有删除行**（`diff old new | grep -c '^<'` 应为 0）；保持原文件的缩进（2 空格）、`LF`、末尾无换行、`ensure_ascii=False`。
+- 用户重开工程后页面数应 +1；打包后应出现 `generated/gui_scr/setup_scr_<页>.c`、`gui_guider.c` 里 `GUI_SCREEN_<页大写>`，并核对生成代码里背景等样式是否符合预期。
+- 工具日志 `%APPDATA%\JieLiGuiBuilder\logs\main.log` 可看它打开的是哪个 `project.jlui`、有没有加载报错（`reading 'canvas'` 这条是工具自带的老报错，与改动无关）。
+
+### 透明页面的典型用途：露出视频图层
+
+视频/投屏走 `jpeg_dec → imc → disp` 流水线时，画面在视频图层（如 fb1），LVGL UI 图层（fb0）合成在它**上面**。活动页背景不透明就会把视频完全盖住（解码照常、屏上看不到）。做法：建一张 `bg_opa: 0`、无控件、无事件的标准页，播放时切过去，结束时弹栈回原页。代码侧见 `code-integration.md`「代码里切换页面」。

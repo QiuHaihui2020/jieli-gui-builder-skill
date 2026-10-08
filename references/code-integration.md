@@ -9,6 +9,7 @@ json 决定控件长什么样、在哪；运行时让它们动起来是 C 代码
 - [先分清接口来自哪里](#先分清接口来自哪里)
 - [控件在代码里叫什么](#控件在代码里叫什么)
 - [页面生命周期回调](#页面生命周期回调)
+- [代码里切换页面](#代码里切换页面)
 - [线程模型：绝不能在别的线程碰控件](#线程模型绝不能在别的线程碰控件)
 - [消息总线：业务侧怎么把数据送进 UI](#消息总线业务侧怎么把数据送进-ui)
 - [按钮点击怎么接](#按钮点击怎么接)
@@ -104,6 +105,45 @@ static int gui_src_action_music_player(int action)
 **LOAD 里要主动拉数据。** UI 是被动接收推送的，如果数据源是事件驱动（蓝牙事件、周期上报），用户切进页面的那一刻界面可能还是空的或者是上一首的内容。在 LOAD 里主动请求一次能消除这个空窗。注意这类主动拉取往往带条件（上例只在蓝牙已连接时拉），**换成别的数据源时这个条件不会自动成立**——本地播放、网络播放都得各自补。
 
 **UNLOAD 里必须释放。** 动画、定时器、解码器、临时 buffer 都要在这里停掉，否则切页面后它们还在后台跑，轻则耗电重则访问已销毁的控件崩溃。
+
+## 代码里切换页面
+
+页面跳转首选在工具里给控件配事件（生成在 `events_init.c`）。业务代码需要主动切页时（例如 USB 副屏连上就切到透明的 `usb_screen` 页），用生成代码同一套 API，**不要自己 `lv_obj_create(NULL)` + `lv_scr_load()`**：那会绕过页面管理器和页面栈，`gui_scr_get_act()` 不知道当前在哪页，别的模块一切页就把你的页冲掉，切回去时原页状态也对不上。
+
+```c
+#include "gui_guider.h"   /* ui_get_scr / ui_load_scr_anim / GUI_SCREEN_xxx / guider_ui */
+
+/* 只能在 LVGL 线程执行 —— 业务线程里用 lvgl_rpc_post_func(fn, 0) 投递 */
+static void my_enter_page(void)
+{
+    gui_scr_t *scr = ui_get_scr(GUI_SCREEN_USB_SCREEN);   /* 打包后才生成这个编号 */
+    if (scr != NULL) {
+        /* is_clean=true, auto_del=true 与生成代码一致：原页对象被删，返回时重建并触发其 LOAD 回调；
+           最后一个 true = 压栈，便于返回 */
+        ui_load_scr_anim(&guider_ui, scr, LV_SCR_LOAD_ANIM_NONE, 0, 0, true, true, true);
+    }
+}
+
+static void my_leave_page(void)
+{
+    gui_scr_t *act = gui_scr_get_act();
+    if ((act == NULL) || (act->id != GUI_SCREEN_USB_SCREEN)) {
+        return;                     /* 已被别的模块切走，不再干预 */
+    }
+    if (!gui_scr_stack_is_empty()) {
+        ui_scr_stack_pop_anim(&guider_ui, LV_SCR_LOAD_ANIM_NONE, 0, 0, true, true, false);
+    } else {
+        ui_load_scr_anim(&guider_ui, ui_get_scr(GUI_SCREEN_MUSIC_PLAYER),
+                         LV_SCR_LOAD_ANIM_NONE, 0, 0, true, true, false);
+    }
+}
+```
+
+要点：
+
+- `GUI_SCREEN_<页名大写>` 由页面名生成，**页面建好并打包后才存在**；在那之前编译会报 undeclared identifier，这是正常的。
+- `gui_scr_stack_*`（`gui_scr_stack_is_empty`、`gui_scr_stack_pop` 等）的声明经 `gui_guider.h` 间接引入，不用也不能单独 `#include "gui_scr_stack.h"`（不在包含路径里）。
+- 切进来的页面若要停掉原页的动画、定时器，靠原页 `GUI_SCREEN_ACTION_UNLOAD` 回调去做（`auto_del=true` 时一定会触发）。
 
 ## 线程模型：绝不能在别的线程碰控件
 
