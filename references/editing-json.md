@@ -252,6 +252,7 @@ json.dumps(j, ensure_ascii=False, indent=2)     # 末尾不要再加换行符
 - `ui_prj/` 经常整个在 `.gitignore` 里，**改之前先把 `project.jlui`、`ui.json`、`scene.json`、`ui/` 整体备份**到工程外。
 - 改完 `diff` 备份与现文件，确认**只有新增行、没有删除行**（`diff old new | grep -c '^<'` 应为 0）；保持原文件的缩进（2 空格）、`LF`、末尾无换行、`ensure_ascii=False`。
 - 用户重开工程后页面数应 +1；打包后应出现 `generated/gui_scr/setup_scr_<页>.c`、`gui_guider.c` 里 `GUI_SCREEN_<页大写>`，并核对生成代码里背景等样式是否符合预期。
+- **打包后要手动把 `generated/gui_scr/setup_scr_<页>.c` 加进 SDK 的 Makefile**（`sdk/apps/<应用>/board/<板型>/Makefile`，照着已有的 `setup_scr_*.c` 行加）。打包只生成文件、不改 Makefile，漏加的症状是链接报 `undefined reference to 'setup_scr_<页>'` / `'unload_scr_<页>'`（引用来自 `gui_guider.c` 的 `ui_get_scr`）。
 - 工具日志 `%APPDATA%\JieLiGuiBuilder\logs\main.log` 可看它打开的是哪个 `project.jlui`、有没有加载报错（`reading 'canvas'` 这条是工具自带的老报错，与改动无关）。
 
 ### 透明页面的典型用途：露出视频图层
